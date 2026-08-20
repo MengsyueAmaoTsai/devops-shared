@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     把 GitVersion 產出的 SemVer 轉成各發佈通道要求的版本格式。
 

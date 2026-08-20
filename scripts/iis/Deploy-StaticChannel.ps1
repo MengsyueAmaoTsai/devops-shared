@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     把一份「發佈通道」的靜態內容部署到 IIS —— MSIX + .appinstaller、CLI 二進位、
     或 apt repository 的檔案樹。
@@ -110,9 +110,15 @@ else {
 # ---------------------------------------------------------------- MIME types
 # IIS 對未知副檔名一律回 404.3，所以每一種要送出去的檔案都得先登記。
 #
-# 注意 apt repository 的 'Release' / 'InRelease' 是「沒有副檔名」的檔案。這裡用
-# '.*' 這個 catch-all 對應它們 —— 這個寫法在 IIS 7+ 可用，但請在第一次部署後
-# 實際 curl 一次 <site>/dists/stable/InRelease 確認，不要只看部署成功就當作好了。
+# 兩個踩過的坑，不要改回去：
+#
+#   1. 絕對不要用 '.*' 當 catch-all。Remove-WebConfigurationProperty -AtElement
+#      會把它當成萬用字元，一次刪光站台上所有繼承來的 mimeMap（web.config 會長出
+#      幾百個 <remove>），結果 .json / .msix / .appinstaller 全部退化成
+#      application/octet-stream。
+#
+#   2. apt repository 的 'Release' / 'InRelease' 沒有副檔名。IIS 對這種檔案的
+#      對應鍵是單一個句點 '.'，不是 '.*'。
 $mimeMaps = @(
     @{ Extension = '.msix';        Type = 'application/msix' }
     @{ Extension = '.msixbundle';  Type = 'application/msixbundle' }
@@ -123,16 +129,27 @@ $mimeMaps = @(
     @{ Extension = '.apk';         Type = 'application/vnd.android.package-archive' }
     @{ Extension = '.aab';         Type = 'application/octet-stream' }
     @{ Extension = '.gz';          Type = 'application/gzip' }
-    @{ Extension = '.nupkg';       Type = 'application/octet-stream' }
-    @{ Extension = '.*';           Type = 'application/octet-stream' }
+    @{ Extension = '.json';        Type = 'application/json' }
+    @{ Extension = '.';            Type = 'text/plain' }
 )
 
+# 先把站台層級的 staticContent 整段清掉，回到純繼承狀態。這讓這一步冪等，
+# 也會自動修復先前錯誤設定留下的殘骸。
+Clear-WebConfiguration `
+    -PSPath "IIS:\Sites\$SiteName" `
+    -Filter 'system.webServer/staticContent' `
+    -ErrorAction SilentlyContinue
+
 foreach ($map in $mimeMaps) {
-    $existing = Get-WebConfigurationProperty `
+    $existing = Get-WebConfiguration `
         -PSPath "IIS:\Sites\$SiteName" `
         -Filter "system.webServer/staticContent/mimeMap[@fileExtension='$($map.Extension)']" `
-        -Name '.' `
         -ErrorAction SilentlyContinue
+
+    # 繼承來的設定已經對了就不要動它 —— 每一次多餘的 remove/add 都是一次踩坑機會。
+    if ($existing -and $existing.mimeType -eq $map.Type) {
+        continue
+    }
 
     if ($existing) {
         Remove-WebConfigurationProperty `
