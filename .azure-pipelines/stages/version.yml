@@ -1,0 +1,35 @@
+parameters:
+  - name: gitVersionVersion
+    type: string
+    default: '6.0.5'
+
+stages:
+  - stage: VersionStage
+    displayName: 'Version'
+    jobs:
+      - job: ComputeVersionJob
+        displayName: 'Compute Version'
+        workspace:
+          clean: all
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            fetchTags: true
+
+          - task: PowerShell@2
+            name: setVersion
+            displayName: 'Compute version with GitVersion'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $ErrorActionPreference = 'Stop'
+                $gitVersionVersion = '${{ parameters.gitVersionVersion }}'
+                $toolDir = Join-Path '$(Agent.TempDirectory)' 'gitversion'
+                $zipPath = Join-Path '$(Agent.TempDirectory)' 'gitversion.zip'
+                $url = "https://github.com/GitTools/GitVersion/releases/download/$gitVersionVersion/gitversion-win-x64-$gitVersionVersion.zip"
+                Invoke-WebRequest -Uri $url -OutFile $zipPath
+                Expand-Archive -Path $zipPath -DestinationPath $toolDir -Force
+                $version = (& "$toolDir\gitversion.exe" /showvariable SemVer).Trim()
+                Write-Host "##vso[task.setvariable variable=semVer;isOutput=true]$version"
+                Write-Host "##vso[build.updatebuildnumber]$version"
+                Write-Host "Computed version: $version"
