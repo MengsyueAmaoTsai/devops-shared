@@ -23,13 +23,72 @@ stages:
               targetType: 'inline'
               script: |
                 $ErrorActionPreference = 'Stop'
+
+                # Windows PowerShell 5.1 的 Invoke-WebRequest 會為進度條逐塊重繪，那會額外拖慢下載，而在 agent 上
+                # 沒有人看得到那個進度條。（真正慢的是網路：同一台機器關掉進度條，下載一次仍然要好幾分鐘——
+                # 所以下面才要快取。）
+                $ProgressPreference = 'SilentlyContinue'
+
                 $gitVersionVersion = '${{ parameters.gitVersionVersion }}'
-                $toolDir = Join-Path '$(Agent.TempDirectory)' 'gitversion'
-                $zipPath = Join-Path '$(Agent.TempDirectory)' 'gitversion.zip'
-                $url = "https://github.com/GitTools/GitVersion/releases/download/$gitVersionVersion/gitversion-win-x64-$gitVersionVersion.zip"
-                Invoke-WebRequest -Uri $url -OutFile $zipPath
-                Expand-Archive -Path $zipPath -DestinationPath $toolDir -Force
-                $version = (& "$toolDir\gitversion.exe" /showvariable SemVer).Trim()
+
+                # 放在 ToolsDirectory，不是 TempDirectory：後者每個 job 都會被清空，前者在自架 agent 上會留到
+                # 下一次執行。每個版本只下載一次——以前每一條 pipeline 的第一步都在賭 GitHub 當下連得上，
+                # 而這份模板被全平台十五條 pipeline 共用，GitHub 抖一下就全部一起紅。
+                $toolDir = Join-Path '$(Agent.ToolsDirectory)' "gitversion\$gitVersionVersion"
+                $exe = Join-Path $toolDir 'gitversion.exe'
+
+                if (Test-Path $exe) {
+                    Write-Host "Using cached GitVersion $gitVersionVersion at $toolDir"
+                }
+                else {
+                    $url = "https://github.com/GitTools/GitVersion/releases/download/$gitVersionVersion/gitversion-win-x64-$gitVersionVersion.zip"
+                    $zipPath = Join-Path '$(Agent.TempDirectory)' "gitversion-$gitVersionVersion.zip"
+
+                    # GitHub 偶爾會在下載途中切斷連線（"An existing connection was forcibly closed by the remote
+                    # host"）。那是對方的一次抖動，不該讓整條 pipeline 失敗，所以退避重試幾次。
+                    for ($attempt = 1; ; $attempt++) {
+                        try {
+                            Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
+                            break
+                        }
+                        catch {
+                            if ($attempt -ge 4) {
+                                throw
+                            }
+
+                            $delay = 5 * $attempt
+                            Write-Warning "Downloading GitVersion failed on attempt $attempt ($($_.Exception.Message)); retrying in $delay seconds."
+                            Start-Sleep -Seconds $delay
+                        }
+                    }
+
+                    # 先解到旁邊的暫存目錄，完整了才搬進去。直接解到快取的位置的話，解到一半被中斷會留下一個
+                    # 有 gitversion.exe、卻缺了其他檔案的目錄——而上面那個 Test-Path 會一直以為它是好的，
+                    # 之後每一次都失敗，直到有人去 agent 上手動刪掉它。
+                    $staging = "$toolDir.partial-$([guid]::NewGuid().ToString('N'))"
+                    Expand-Archive -Path $zipPath -DestinationPath $staging -Force
+
+                    New-Item -ItemType Directory -Path (Split-Path $toolDir -Parent) -Force | Out-Null
+
+                    if (Test-Path $toolDir) {
+                        Remove-Item -Path $toolDir -Recurse -Force
+                    }
+
+                    Move-Item -Path $staging -Destination $toolDir
+                    Write-Host "Downloaded GitVersion $gitVersionVersion to $toolDir"
+                }
+
+                # 不收 stderr：在 Windows PowerShell 5.1、$ErrorActionPreference = 'Stop' 底下加上 2>&1 的話，原生程式
+                # 寫出的每一行 stderr 都會變成例外，連成功時的一行警告都會讓這一步失敗。不收的話它照樣印在 log 上。
+                $output = & $exe /showvariable SemVer
+
+                # 原生程式失敗不會觸發 $ErrorActionPreference。不檢查的話，GitVersion 的錯誤訊息會被當成
+                # 版號寫進 build number，而後面每一個階段都拿著它去打標籤。
+                if ($LASTEXITCODE -ne 0) {
+                    throw "GitVersion exited with $LASTEXITCODE; its error is in the log above."
+                }
+
+                $version = "$output".Trim()
                 Write-Host "##vso[task.setvariable variable=semVer;isOutput=true]$version"
                 Write-Host "##vso[build.updatebuildnumber]$version"
                 Write-Host "Computed version: $version"
