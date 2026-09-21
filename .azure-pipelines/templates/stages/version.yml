@@ -44,15 +44,16 @@ stages:
                     $url = "https://github.com/GitTools/GitVersion/releases/download/$gitVersionVersion/gitversion-win-x64-$gitVersionVersion.zip"
                     $zipPath = Join-Path '$(Agent.TempDirectory)' "gitversion-$gitVersionVersion.zip"
 
-                    # GitHub 偶爾會在下載途中切斷連線（"An existing connection was forcibly closed by the remote
-                    # host"）。那是對方的一次抖動，不該讓整條 pipeline 失敗，所以退避重試幾次。
+                    # GitHub 會在下載途中切斷連線（"An existing connection was forcibly closed by the remote host"），
+                    # 而且從這台 agent 連過去不是偶一為之：第一次驗證這份快取時，四次裡斷了三次，最後一次才成功。
+                    # 所以退避重試六次——冷快取一個版本只會發生一次，多等幾分鐘好過整條 pipeline 紅掉。
                     for ($attempt = 1; ; $attempt++) {
                         try {
                             Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
                             break
                         }
                         catch {
-                            if ($attempt -ge 4) {
+                            if ($attempt -ge 6) {
                                 throw
                             }
 
