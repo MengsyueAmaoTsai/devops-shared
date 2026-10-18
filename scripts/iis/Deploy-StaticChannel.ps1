@@ -125,6 +125,7 @@ $mimeMaps = @(
     @{ Extension = '.appx';        Type = 'application/appx' }
     @{ Extension = '.appxbundle';  Type = 'application/appxbundle' }
     @{ Extension = '.appinstaller';Type = 'application/appinstaller' }
+    @{ Extension = '.cer';         Type = 'application/pkix-cert' }
     @{ Extension = '.deb';         Type = 'application/vnd.debian.binary-package' }
     @{ Extension = '.apk';         Type = 'application/vnd.android.package-archive' }
     @{ Extension = '.aab';         Type = 'application/octet-stream' }
