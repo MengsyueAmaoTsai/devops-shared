@@ -452,7 +452,9 @@ function Write-ReverseProxyWebConfig {
     # There is deliberately no <webSocket> element: IIS locks that section at the server
     # level (overrideModeDefault="Deny"), so once the WebSocket Protocol feature is
     # installed the element turns every request into a 500.19. The server default already
-    # has WebSockets enabled wherever the feature is present.
+    # has WebSockets enabled wherever the feature is present. The <proxy> element states the
+    # intent, but ARR does not take reverseRewriteHostInResponseHeaders from it; provisioning
+    # sets that one on the server.
     @"
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -732,6 +734,27 @@ Set-ItemProperty -Path $appPoolPath -Name 'failure.rapidFailProtectionMaxCrashes
 if ($HostingModel -eq 'AspNetCore') {
     Write-Step "Setting ASPNETCORE_ENVIRONMENT=$EnvironmentName on the application pool."
     Set-AppPoolEnvironmentVariable -AppPoolName $SiteName -Name 'ASPNETCORE_ENVIRONMENT' -Value $EnvironmentName
+}
+
+# ARR applies reverseRewriteHostInResponseHeaders from the server level whatever a site's
+# web.config says: the generated one has always set it to false, and ARR on Integration
+# rewrote anyway. The server default replaces the host of every absolute Location a proxied
+# application returns with the host the request came in on, so the Portal's redirect to the
+# Identity server at localhost:12000 reached the browser as localhost:11999 - the Portal
+# itself. The setting is server-wide, and no site ARR proxies on these hosts relies on it.
+# Written only when it differs, since a change to applicationHost.config reaches every
+# worker process on the host.
+if ($HostingModel -eq 'ReverseProxy') {
+    $serverProxy = Get-WebConfiguration -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter 'system.webServer/proxy'
+
+    if ($serverProxy.reverseRewriteHostInResponseHeaders) {
+        Write-Step "Turning off ARR's host rewriting of response headers on this server."
+        Set-WebConfigurationProperty `
+            -PSPath 'MACHINE/WEBROOT/APPHOST' `
+            -Filter 'system.webServer/proxy' `
+            -Name 'reverseRewriteHostInResponseHeaders' `
+            -Value $false
+    }
 }
 
 $portHolder = Get-SiteHoldingPort -Port $Port -ExcludeSiteName $SiteName

@@ -182,6 +182,17 @@ Describe 'Deploy-IisSite.ps1 reverse-proxy hosting' {
             Should -Not -Match '<webSocket' `
             -Because 'the section is locked at the server level by default'
     }
+
+    It 'turns off ARR host rewriting on the server, not only in web.config' {
+        # Regression guard. ARR applies reverseRewriteHostInResponseHeaders from
+        # applicationHost.config whatever web.config says, and its default turned the
+        # Portal's sign-in redirect to the Identity server into a redirect back to the Portal.
+        $guards = Get-GuardedBy -Text "HostingModel -eq 'ReverseProxy'"
+        $text = $guards.Extent.Text -join "`n"
+
+        $text | Should -Match "-PSPath 'MACHINE/WEBROOT/APPHOST'"
+        $text | Should -Match '-Name ''reverseRewriteHostInResponseHeaders''\s+`\s+-Value \$false'
+    }
 }
 
 Describe 'Deploy-IisSite.ps1 reusability' {
