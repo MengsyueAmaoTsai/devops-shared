@@ -449,6 +449,10 @@ function Write-ReverseProxyWebConfig {
 
     # preserveHostHeader is off and the forwarded headers are set explicitly, so the
     # application sees the public host rather than 127.0.0.1 when it builds absolute URLs.
+    # There is deliberately no <webSocket> element: IIS locks that section at the server
+    # level (overrideModeDefault="Deny"), so once the WebSocket Protocol feature is
+    # installed the element turns every request into a 500.19. The server default already
+    # has WebSockets enabled wherever the feature is present.
     @"
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -468,7 +472,6 @@ function Write-ReverseProxyWebConfig {
     </rewrite>
 
     <proxy enabled="true" preserveHostHeader="false" reverseRewriteHostInResponseHeaders="false" />
-    <webSocket enabled="true" />
   </system.webServer>
 </configuration>
 "@ | Set-Content -LiteralPath $Path -Encoding UTF8

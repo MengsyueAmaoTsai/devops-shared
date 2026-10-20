@@ -167,6 +167,21 @@ Describe 'Deploy-IisSite.ps1 reverse-proxy hosting' {
         ($guards.Extent.Text -join "`n") |
             Should -Match 'ASPNETCORE_ENVIRONMENT'
     }
+
+    It 'leaves the webSocket section to the server' {
+        # Regression guard. IIS locks system.webServer/webSocket at the server level, so a
+        # site-level element answers every request with a 500.19 once the WebSocket Protocol
+        # feature is installed - which took down all four Node sites on Integration.
+        $writer = $script:Functions | Where-Object { $_.Name -eq 'Write-ReverseProxyWebConfig' }
+        $template = $writer.Body.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst] }, $true)
+        $template | Should -Not -BeNullOrEmpty
+
+        ($template.Value -join "`n") | Should -Match '<proxy enabled="true"'
+        ($template.Value -join "`n") |
+            Should -Not -Match '<webSocket' `
+            -Because 'the section is locked at the server level by default'
+    }
 }
 
 Describe 'Deploy-IisSite.ps1 reusability' {
