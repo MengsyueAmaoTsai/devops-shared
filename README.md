@@ -131,6 +131,11 @@ Common requirements:
 
 - **URL Rewrite** and **Application Request Routing** installed in IIS. Without them, IIS returns
   500.19 rather than reporting a startup failure, making the issue look like an application defect.
+- Permission to change ARR's server-level proxy settings. The script sets
+  `reverseRewriteHostInResponseHeaders` to `false` in `applicationHost.config`, which affects every
+  site ARR proxies on the host. ARR does not take that attribute from the site's `web.config`, and
+  its default rewrites the host of any absolute `Location` the application returns to the public
+  host, so a redirect to the Identity server comes back to the site itself.
 - Node.js installed on the host. By default, the script resolves an absolute path from the target
   machine's `PATH` using `Get-Command node.exe`; `-NodeExePath` can also specify it explicitly.
   WinSW receives the resolved image path and does not depend on `PATH` when starting the service.
