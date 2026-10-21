@@ -10,8 +10,10 @@ script directly.
 
 | Path | Purpose |
 |---|---|
-| `.azure-pipelines/stages/version.yml` | Calculates SemVer using GitVersion |
+| `.azure-pipelines/templates/stages/version.yml` | Calculates SemVer using GitVersion |
 | `scripts/iis/Deploy-IisSite.ps1` | Provisions IIS and deploys ASP.NET Core or Node applications |
+| `scripts/iis/Deploy-StaticChannel.ps1` | Deploys a static release channel to IIS: MSIX with `.appinstaller`, CLI binaries, or an apt repository |
+| `scripts/versioning/ConvertTo-ChannelVersion.ps1` | Converts the GitVersion SemVer into the version format each release channel requires |
 | `PSScriptAnalyzerSettings.psd1` | PowerShell static analysis rules |
 | `tests/Deploy-IisSite.Tests.ps1` | Pester static analysis tests for the deployment script |
 | `.github/workflows/validate.yml` | Linting and tests for this repository |
@@ -38,7 +40,7 @@ version tag is recommended for production environments.
 
 ```yaml
 stages:
-  - template: .azure-pipelines/stages/version.yml@devops-shared
+  - template: .azure-pipelines/templates/stages/version.yml@devops-shared
     parameters:
       gitVersionVersion: '6.0.5'
 ```
