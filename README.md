@@ -12,10 +12,12 @@ script directly.
 |---|---|
 | `.azure-pipelines/templates/stages/version.yml` | Calculates SemVer using GitVersion |
 | `scripts/iis/Deploy-IisSite.ps1` | Provisions IIS and deploys ASP.NET Core or Node applications |
-| `scripts/iis/Deploy-StaticChannel.ps1` | Deploys a static release channel to IIS: MSIX with `.appinstaller`, CLI binaries, or an apt repository |
+| `scripts/iis/Deploy-StaticChannel.ps1` | Deploys a static release channel to IIS: MSIX with `.appinstaller`, CLI binaries, install scripts (`.ps1`, `.sh`), or an apt repository |
+| `scripts/iis/Remove-UnlistedAptPackages.ps1` | After `Deploy-StaticChannel.ps1`, removes the files of an apt repository's `pool/` that no `Packages` index lists |
 | `scripts/versioning/ConvertTo-ChannelVersion.ps1` | Converts the GitVersion SemVer into the version format each release channel requires |
 | `PSScriptAnalyzerSettings.psd1` | PowerShell static analysis rules |
 | `tests/Deploy-IisSite.Tests.ps1` | Pester static analysis tests for the deployment script |
+| `tests/Remove-UnlistedAptPackages.Tests.ps1` | Pester behavioural tests for the apt pool pruning, against repositories built in `TestDrive` |
 | `.github/workflows/validate.yml` | Linting and tests for this repository |
 
 ## Referencing the repository
@@ -258,6 +260,23 @@ Backup and rollback require the target directory to contain the payload marker f
 hosting model (`web.config` or `server.js`). No previous payload exists during the first deployment,
 so a failed health check fails the deployment rather than rolling back to an empty directory.
 
+## Pruning an apt repository
+
+`Deploy-StaticChannel.ps1` adds content and keeps what was there, so a repository its pipeline
+rebuilds with the current version only leaves each previous version's `.deb` files in `pool/`.
+Run `Remove-UnlistedAptPackages.ps1` after it, on the repository's folder on the site:
+
+```powershell
+.\Remove-UnlistedAptPackages.ps1 -RepositoryPath 'C:\inetpub\channels\RichillCapital.Downloads.Integration\apt'
+```
+
+It keeps every file a `dists/<suite>/<component>/binary-<arch>/Packages` lists, in any suite,
+removes the other files of `pool/` and the directories that leaves empty. It removes nothing and
+fails when no index lists a file, or when an index lists a file that is not in the pool, since
+either means the folder is not the repository just deployed. A file it cannot remove, such as one
+being downloaded, is left for the next run with a warning. A client that read the indexes before
+the deployment gets 404 for a removed package until it runs `apt update` again.
+
 ## Local validation
 
 ```powershell
@@ -267,7 +286,8 @@ Invoke-Pester -Path ./tests
 
 GitHub Actions runs the same static analysis and tests for pushes and pull requests to `master`.
 
-The tests perform AST-based static analysis. Helper functions currently reside in the same file as
+`Remove-UnlistedAptPackages.ps1` touches only the folder it is given, so its tests run it as it is.
+The tests of `Deploy-IisSite.ps1` perform AST-based static analysis. Helper functions currently reside in the same file as
 the deployment logic, and dot-sourcing it would execute the entire script, so they cannot be tested
 in isolation. Adding behavioral tests requires first extracting the helpers into a file that can
 be dot-sourced, such as `scripts/iis/_IisCommon.ps1`. All helper inputs are now explicit parameters

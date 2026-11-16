@@ -131,6 +131,9 @@ $mimeMaps = @(
     @{ Extension = '.aab';         Type = 'application/octet-stream' }
     @{ Extension = '.gz';          Type = 'application/gzip' }
     @{ Extension = '.json';        Type = 'application/json' }
+    # Install scripts (irm .../install.ps1 | iex, curl .../install.sh | bash), shown as text in a browser.
+    @{ Extension = '.ps1';         Type = 'text/plain' }
+    @{ Extension = '.sh';          Type = 'text/plain' }
     @{ Extension = '.';            Type = 'text/plain' }
 )
 
